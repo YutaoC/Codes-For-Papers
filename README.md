@@ -8,7 +8,7 @@ Codes for my papers
 ## AoII under resource constraints
 You can view the paper [here](https://ieeexplore.ieee.org/document/9686027)
 
-The codes are available [here](AoII_under_resource_constraints)
+The codes are available [here](AoII_under_resource_constraint)
 
 ## AoII in scheduling problems
 You can view the paper [here](https://www.mdpi.com/1099-4300/23/12/1572/htm)
@@ -21,7 +21,7 @@ You can view the paper [here](https://arxiv.org/abs/2203.02979)
 The codes are available [here](AoII_under_delay)
 
 ## Utils
-[Utility file](#utils) contains the MatLab codes generates all my plots
+The folder "[utils](utils)" contains the MatLab codes generates all my plots.
 
 ----
 Last Updated: Apr. 26 2022 by Yutao Chen.
