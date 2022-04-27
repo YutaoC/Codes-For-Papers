@@ -24,4 +24,4 @@ The codes are available [here](AoII_under_delay)
 The folder "[utils](utils)" contains the MatLab codes generates all my plots.
 
 ----
-Last Updated: Apr. 26 2022 by Yutao Chen.
+Last Updated: Apr. 27 2022 by Yutao Chen.
