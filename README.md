@@ -15,8 +15,6 @@ You can view the paper [here](https://www.mdpi.com/1099-4300/23/12/1572/htm)
 
 The codes are available [here](AoII_in_scheduling_problems)
 
-[This](AoII_in_scheduling_problems/run(UpdateLater).m) and [this](AoII_in_scheduling_problems/run_Whittle(UpdateLater).m) need update.
-
 ## AoII under delay
 You can view the paper [here](https://arxiv.org/abs/2203.02979)
 
