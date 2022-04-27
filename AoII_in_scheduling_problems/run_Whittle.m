@@ -1,126 +1,87 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This file calculates and evaluates the following scheduling policies.
-% 1. Whittle's Index policy   (WIP)
+% This file calculates the expected AoII of the system resulting from the 
+% adoption of several scheduling policies. We consider the system that 
+% satisfies Condition 1 in the paper. Hence, we consider the following 
+% scheduling policies:
+% 1. Whittle's index policy   (WIP)
 % 2. Indexed Priority policy  (IPP)
 % 3. Benchmark Performance    (BP)
-% 4. Greedy/Greedy+ Policy    (G/G+P)
-% Notes: Gamma are set to be the same across all users.
+% 4. Greedy+ Policy    (G+P)
+% See the second half of Section 7 of the paper.
 % Author: Yutao Chen
 % Updated: 04/2022
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-clear;
-clc;
+% Input:
+%   N - Number of states
+%   w - Weights in time penalty function
+%   p_pool - Source process dynamics
+%   pe0_pool - CSI accuracy (0)
+%   pe1_pool - CSI accuracy (1)
+%   gamma_pool - CSI dynamics
+% Output:
+%   AoII_WIP - AoII resulting from Whittle's index policy
+%   AoII_IPP - AoII resulting from Indexed priority policy
+%   AoII_BP - AoII resulting from the optimal policy for the relaxed
+%             problem
+%   AoII_GP - AoII resulting from Greddy policy
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [AoII_WIP,AoII_IPP,AoII_BP,AoII_GP] = run_Whittle(N,w,p_pool, ...
+                                                           pe0_pool, ...
+                                                           pe1_pool, ...
+                                                           gamma_pool)
+    alpha_pool = pe1_pool.*(1-p_pool) + (1-pe1_pool).*p_pool;
+    beta_pool = pe0_pool.*p_pool + (1-pe0_pool).*(1-p_pool);
+    c1_pool = (1-gamma_pool).*(1-p_pool) + gamma_pool.*alpha_pool;
+    c2_pool = (1-gamma_pool).*beta_pool + gamma_pool.*alpha_pool;
 
-%% System Parameters
-N = 15;      % Number of users in the system
-smax = 800;  % Truncate the value of s
-
-% Weights in time penalty funtions
-% w = linspace(0.5,1.5,N);
-w = linspace(1,1,N);
-
-% Probabilities for the source to change states
-p_pool = linspace(0.05,0.45,N);
-% p_pool = 0.3 * linspace(1,1,N);
-
-% Probability of error when CSI indicates failure (0)
-% pe0_pool = linspace(0,0.45,N);
-pe0_pool = 0.1 * linspace(1,1,N);
-% pe0_pool = 0 * linspace(1,1,N); 
-
-% Probability of error when CSI indicates success (1)
-% pe1_pool = linspace(0,0.45,N);
-pe1_pool = 0.1 * linspace(1,1,N); 
-
-% Probability distribution of CSI
-% gamma_pool = linspace(0,0.45,N);
-gamma_pool = 0.6 * linspace(1,1,N);
-
-% Auxiliarily quantites (see paper for definition)
-alpha_pool = pe1_pool.*(1-p_pool) + (1-pe1_pool).*p_pool;
-beta_pool = pe0_pool.*p_pool + (1-pe0_pool).*(1-p_pool);
-c1_pool = (1-gamma_pool).*(1-p_pool) + gamma_pool.*alpha_pool;
-c2_pool = (1-gamma_pool).*beta_pool + gamma_pool.*alpha_pool;
-
-% Store the results
-AoII_ALL = zeros(1,5);
-
-%% Whittle's Index
-Whittle = zeros(smax/2,N);
-for j = 1:N
-    p = p_pool(j);
-    pe1 = pe1_pool(j);
-    gamma = gamma_pool(j);
-    alpha = alpha_pool(j);
-    c1 = c1_pool(j);
-    const = ((1-c1)*(1-p)-gamma*(1-p-alpha)) / (c1*(1-p-alpha));
-    for i = 1:smax/2
-        [AoII,rate] = expected_value_reduced(p,c1,i,gamma,smax,j,w);
-        tmp = 0;
-        for k = i+1:smax
-           tmp = tmp + f(k,j,w) * c1^(k-i-1); 
+    smax = 800;  % Maximum value of s
+    
+    % Whittle's Index
+    Whittle = zeros(smax/2,N);
+    for j = 1:N
+        p = p_pool(j);
+        gamma = gamma_pool(j);
+        alpha = alpha_pool(j);
+        c1 = c1_pool(j);
+        const = ((1-c1)*(1-p)-gamma*(1-p-alpha)) / (c1*(1-p-alpha));
+        for i = 1:smax/2
+            [AoII,rate] = expected_value_reduced(p,c1,i,gamma,smax,j,w);
+            tmp = 0;
+            for k = i+1:smax
+               tmp = tmp + f(k,j,w) * c1^(k-i-1); 
+            end
+            Whittle(i,j) = ((1-c1)*tmp - AoII)/(const + rate);
         end
-        Whittle(i,j) = ((1-c1)*tmp - AoII)/(const + rate);
     end
-end
 
-%% Policy Evaluation - WIP
-run = 15;       % Number of runs
-epoch = 15000;  % Epochs in each run
-
-AoII_in_run = 0;
-
-for i = 1:run
-    cumulative_AoII = 0;
-    ages = zeros(1,N);
-    C = binornd(1,gamma,[1,N]); % CSI
-    for j = 1:epoch
-        % Policy
-        a = WIP(Whittle,ages,C,N);
-        % Evolve
-        ages_ = NextStep(a,ages,pe1_pool,pe0_pool,C,p_pool,N);
-        C = binornd(1,gamma,[1,N]); % CSI
-        cumulative_AoII = cumulative_AoII + f_all(ages,N,w);
-        % one step forward
-        ages = ages_;
+    % Policy Evaluation - WIP
+    run = 15;
+    epoch = 15000;
+    expected_penalty = 0;
+    for i = 1:run
+        cumulative_penalty = 0;
+        cur_age = zeros(1,N);
+        C = realization(gamma_pool,N);
+        for j = 1:epoch
+            a = WIP(Whittle,cur_age,C,N);
+            nxt_ages = NextStep(a,cur_age,pe1_pool,pe0_pool,C,p_pool,N);
+            C = realization(gamma_pool,N);
+            cumulative_penalty = cumulative_penalty + f_all(cur_age,N,w);
+            cur_age = nxt_ages;
+        end
+        expected_penalty = expected_penalty + cumulative_penalty / epoch;
     end
-    AoII_in_run = AoII_in_run + cumulative_AoII / epoch;
-end
-AoII = AoII_in_run / run;
+    AoII_WIP = expected_penalty / run;
 
-AoII_ALL(1) = AoII;
 
-fprintf('------------------------------------\n');
-fprintf('N = %d \n', N);
-fprintf('(WIP) Average AoII = %.4f \n', AoII/N);
-fprintf('------------------------------------\n');
+    % Optimal policy for RP
+    epsilon = 0.01;
+    n_est = zeros(2,N);
+    rho = zeros(1,N);
 
-%% Optimal policy for RP
-% Returns two deterministic policies and corresponding value functions
-epsilon = 0.01;      % Convergence criteria in RVI
-n_est = zeros(2,N);  % Threshold vector
-rho = zeros(1,N);    % Transmission rate
+    lambda_low = 0;
+    lambda_high = 1;
 
-% Initalization
-lambda_low = 0;
-lambda_high = 1;
-
-for j = 1:N
-    p = p_pool(j);
-    c1 = c1_pool(j);
-    c2 = c2_pool(j);
-    pe1 = pe1_pool(j);
-    pe0 = pe0_pool(j);
-    gamma = gamma_pool(j);
-    [n_est(:,j),~] = RVI(lambda_high,p,gamma,pe1,pe0,smax,epsilon,j,w);
-    [~,rho(j)] = expected_value(p,c1,c2,n_est(:,j),gamma,smax,j,w);
-end
-Rate = sum(rho);
-
-% Find the range of lambda
-while Rate >= 1
-    lambda_low = lambda_high;
-    lambda_high = lambda_low * 2;
     for j = 1:N
         p = p_pool(j);
         c1 = c1_pool(j);
@@ -131,205 +92,180 @@ while Rate >= 1
         [n_est(:,j),~] = RVI(lambda_high,p,gamma,pe1,pe0,smax,epsilon,j,w);
         [~,rho(j)] = expected_value(p,c1,c2,n_est(:,j),gamma,smax,j,w);
     end
-    Rate = sum(rho);
-end
+    Rbar = sum(rho);
 
-% Binary search
-while abs(lambda_high - lambda_low) > 0.001
-    lambda = (lambda_low + lambda_high) / 2;
+    while Rbar >= 1
+        lambda_low = lambda_high;
+        lambda_high = lambda_low * 2;
+        for j = 1:N
+            p = p_pool(j);
+            c1 = c1_pool(j);
+            c2 = c2_pool(j);
+            pe1 = pe1_pool(j);
+            pe0 = pe0_pool(j);
+            gamma = gamma_pool(j);
+            [n_est(:,j),~] = RVI(lambda_high,p,gamma,pe1,pe0,smax, ...
+                                 epsilon,j,w);
+            [~,rho(j)] = expected_value(p,c1,c2,n_est(:,j),gamma,smax,j,w);
+        end
+        Rbar = sum(rho);
+    end
+
+    while abs(lambda_high - lambda_low) > 0.001
+        lambda = (lambda_low + lambda_high) / 2;
+        for j = 1:N
+            p = p_pool(j);
+            c1 = c1_pool(j);
+            c2 = c2_pool(j);
+            pe1 = pe1_pool(j);
+            pe0 = pe0_pool(j);
+            gamma = gamma_pool(j);
+            [n_est(:,j),~] = RVI(lambda,p,gamma,pe1,pe0,smax,epsilon,j,w);
+            [~,rho(j)] = expected_value(p,c1,c2,n_est(:,j),gamma,smax,j,w);
+        end
+        Rbar = sum(rho);
+        if Rbar >= 1
+           lambda_low = lambda;
+        else
+           lambda_high = lambda;
+        end
+    end
+
+    VF_plus = zeros(smax+1,2,N);
+    n_plus = zeros(2,N);
     for j = 1:N
         p = p_pool(j);
-        c1 = c1_pool(j);
-        c2 = c2_pool(j);
         pe1 = pe1_pool(j);
         pe0 = pe0_pool(j);
         gamma = gamma_pool(j);
-        [n_est(:,j),~] = RVI(lambda,p,gamma,pe1,pe0,smax,epsilon,j,w);
-        [~,rho(j)] = expected_value(p,c1,c2,n_est(:,j),gamma,smax,j,w);
+        [n_plus(:,j),VF_plus(:,:,j)] = RVI(lambda_high,p,gamma,pe1,pe0, ...
+                                           smax,epsilon,j,w);
     end
-    Rate = sum(rho);
-    if Rate >= 1
-       lambda_low = lambda;
+
+    VF_minus = zeros(smax+1,2,N);
+    n_minus = zeros(2,N);
+    for j = 1:N
+        p = p_pool(j);
+        pe1 = pe1_pool(j);
+        pe0 = pe0_pool(j);
+        gamma = gamma_pool(j);
+        [n_minus(:,j),VF_minus(:,:,j)] = RVI(lambda_low,p,gamma,pe1, ...
+                                             pe0,smax,epsilon,j,w);
+    end
+
+
+    % Benchmark Performance
+    if isequal(n_plus,n_minus)
+        AoII_BP = 0;
+        for j = 1:N
+            p = p_pool(j);
+            c1 = c1_pool(j);
+            c2 = c2_pool(j);
+            gamma = gamma_pool(j);
+            [tmp,~] = expected_value(p,c1,c2,n_plus(:,j),gamma,smax,j,w);
+            AoII_BP = AoII_BP + tmp;
+        end
     else
-       lambda_high = lambda;
+        Pbar_plus = 0;
+        Pbar_minus = 0;
+        Cbar_plus = 0;
+        Cbar_minus = 0;
+        for j = 1:N
+            p = p_pool(j);
+            c1 = c1_pool(j);
+            c2 = c2_pool(j);
+            gamma = gamma_pool(j);
+            [tmp_a1,tmp_r1] = expected_value(p,c1,c2,n_plus(:,j), ...
+                                             gamma,smax,j,w);
+            [tmp_a2,tmp_r2] = expected_value(p,c1,c2,n_minus(:,j), ...
+                                             gamma,smax,j,w);
+            Pbar_plus = Pbar_plus + tmp_r1;
+            Pbar_minus = Pbar_minus + tmp_r2;
+            Cbar_plus = Cbar_plus + tmp_a1;
+            Cbar_minus = Cbar_minus + tmp_a2;
+        end
+        mu = (1 - Pbar_plus) / (Pbar_minus - Pbar_plus);
+        AoII_BP = mu * Cbar_minus + (1 - mu) * Cbar_plus;
     end
-end
 
-% Lambda+
-VF_plus = zeros(smax+1,2,N);  % Corresponding value function
-n_plus = zeros(2,N);          % Corresponding threshold vector
-for j = 1:N
-    p = p_pool(j);
-    pe1 = pe1_pool(j);
-    pe0 = pe0_pool(j);
-    gamma = gamma_pool(j);
-    [n_plus(:,j),VF_plus(:,:,j)] = RVI(lambda_high,p,gamma,pe1,pe0, ...
-                                       smax,epsilon,j,w);
-end
 
-% Lambda-
-VF_minus = zeros(smax+1,2,N);  % Corresponding value function
-n_minus = zeros(2,N);          % Corresponding threshold vector
-for j = 1:N
-    p = p_pool(j);
-    pe1 = pe1_pool(j);
-    pe0 = pe0_pool(j);
-    gamma = gamma_pool(j);
-    [n_minus(:,j),VF_minus(:,:,j)] = RVI(lambda_low,p,gamma,pe1,pe0, ...
-                                         smax,epsilon,j,w);
-end
-
-%% Benchmark Performance - BP
-if isequal(n_plus,n_minus)
-    AoII = 0;
+    % Index Ix
+    Ix = zeros(smax/2,2,N);
     for j = 1:N
         p = p_pool(j);
-        c1 = c1_pool(j);
-        c2 = c2_pool(j);
+        pe1 = pe1_pool(j);
+        pe0 = pe0_pool(j);
         gamma = gamma_pool(j);
-        [tmp,~] = expected_value(p,c1,c2,n_plus(:,j),gamma,smax,j,w);
-        AoII = AoII + tmp;
-    end
-else
-    Pbar_plus = 0;
-    Pbar_minus = 0;
-    Cbar_plus = 0;
-    Cbar_minus = 0;
-    for j = 1:N
-        p = p_pool(j);
-        c1 = c1_pool(j);
-        c2 = c2_pool(j);
-        gamma = gamma_pool(j);
-        [tmp_a1,tmp_r1] = expected_value(p,c1,c2,n_plus(:,j), ...
-                                         gamma,smax,j,w);
-        [tmp_a2,tmp_r2] = expected_value(p,c1,c2,n_minus(:,j), ...
-                                         gamma,smax,j,w);
-        Pbar_plus = Pbar_plus + tmp_r1;
-        Pbar_minus = Pbar_minus + tmp_r2;
-        Cbar_plus = Cbar_plus + tmp_a1;
-        Cbar_minus = Cbar_minus + tmp_a2;
-    end
-    mu = (1 - Pbar_plus) / (Pbar_minus - Pbar_plus);
-    AoII = mu * Cbar_minus + (1 - mu) * Cbar_plus;
-end
-
-AoII_ALL(2) = AoII;
-
-fprintf('------------------------------------\n');
-fprintf('N = %d \n', N);
-fprintf('(BP) Average AoII = %.4f \n', AoII/N);
-fprintf('------------------------------------\n');
-
-%% Index Ix
-Ix = zeros(smax/2,2,N);
-for j = 1:N
-    p = p_pool(j);
-    pe1 = pe1_pool(j);
-    pe0 = pe0_pool(j);
-    gamma = gamma_pool(j);
-    for i = 1:smax/2
-        for r = 1:2
-            Trans1 = RVI_Trans(i,r,p,gamma,pe1,pe0,smax,VF_plus(:,:,j),1);
-            Trans2 = RVI_Trans(i,r,p,gamma,pe1,pe0,smax,VF_plus(:,:,j),2);
-            Ix(i,r,j) = Trans1-Trans2-lambda_high;
+        for i = 1:smax/2
+            for r = 1:2
+                Trans1 = RVI_Trans(i,r,p,gamma,pe1,pe0,smax, ...
+                                   VF_plus(:,:,j),1);
+                Trans2 = RVI_Trans(i,r,p,gamma,pe1,pe0,smax, ...
+                                   VF_plus(:,:,j),2);
+                Ix(i,r,j) = Trans1-Trans2-lambda_high;
+            end
         end
     end
-end
 
-%% Policy Evaluation - IPP
-run = 15;       % Number of runs
-epoch = 15000;  % Epochs in each run
-
-AoII_in_run = 0;
-
-for i = 1:run
-    cumulative_AoII = 0;
-    ages = zeros(1,N);
-    C = binornd(1,gamma_pool(1),[1,N]); % CSI
-    for j = 1:epoch
-        % Policy
-        a = IPP(Ix,ages,C,N);
-        % Evolve
-        ages_ = NextStep(a,ages,pe1_pool,pe0_pool,C,p_pool,N);
-        C = binornd(1,gamma_pool(1),[1,N]); % CSI
-        cumulative_AoII = cumulative_AoII + f_all(ages,N,w);
-        % one step forward
-        ages = ages_;
+    % Policy Evaluation - IPP
+    run = 15;
+    epoch = 15000;
+    expected_penalty = 0;
+    for i = 1:run
+        cumulative_penalty = 0;
+        cur_age = zeros(1,N);
+        C = realization(gamma_pool,N);
+        for j = 1:epoch
+            a = IPP(Ix,cur_age,C,N);
+            nxt_ages = NextStep(a,cur_age,pe1_pool,pe0_pool,C,p_pool,N);
+            C = realization(gamma_pool,N);
+            cumulative_penalty = cumulative_penalty + f_all(cur_age,N,w);
+            cur_age = nxt_ages;
+        end
+        expected_penalty = expected_penalty + cumulative_penalty / epoch;
     end
-    AoII_in_run = AoII_in_run + cumulative_AoII / epoch;
-end
-AoII = AoII_in_run / run;
+    AoII_IPP = expected_penalty / run;
 
-AoII_ALL(3) = AoII;
-
-fprintf('------------------------------------\n');
-fprintf('N = %d \n', N);
-fprintf('(IPP) Average AoII = %.4f \n', AoII/N);
-fprintf('------------------------------------\n');
-
-%% Policy Evaluation - G+P
-run = 15;       % Number of runs
-epoch = 15000;  % Epochs in each run
-
-AoII_in_run = 0;
-
-for i = 1:run
-    cumulative_AoII = 0;
-    ages = zeros(1,N);
-    C = binornd(1,gamma_pool(1),[1,N]); % CSI
-    for j = 1:epoch
-        % Policy
-        a = Greedy_plus(ages,N,C);
-        % Evolve
-        ages_ = NextStep(a,ages,pe1_pool,pe0_pool,C,p_pool,N);
-        C = binornd(1,gamma_pool(1),[1,N]); % CSI
-        cumulative_AoII = cumulative_AoII + f_all(ages,N,w);
-        % one step forward
-        ages = ages_;
+    
+    % Policy Evaluation - GP
+    run = 15;
+    epoch = 15000;
+    expected_penalty = 0;
+    for i = 1:run
+        cumulative_penalty = 0;
+        cur_age = zeros(1,N);
+        C = realization(gamma_pool,N);
+        for j = 1:epoch
+            a = Greedy_plus(cur_age,N,C);
+            nxt_ages = NextStep(a,cur_age,pe1_pool,pe0_pool,C,p_pool,N);
+            C = realization(gamma_pool,N);
+            cumulative_penalty = cumulative_penalty + f_all(cur_age,N,w);
+            cur_age = nxt_ages;
+        end
+        expected_penalty = expected_penalty + cumulative_penalty / epoch;
     end
-    AoII_in_run = AoII_in_run + cumulative_AoII / epoch;
+    AoII_GP = expected_penalty / run;
 end
-AoII = AoII_in_run / run;
 
-AoII_ALL(4) = AoII;
-
-fprintf('------------------------------------\n');
-fprintf('N = %d \n', N);
-fprintf('(G+P) Average AoII = %.4f \n', AoII/N);
-fprintf('------------------------------------\n');
-
-%% Policy Evaluation - GP
-run = 15;       % Number of runs
-epoch = 15000;  % Epochs in each run
-
-AoII_in_run = 0;
-
-for i = 1:run
-    cumulative_AoII = 0;
-    ages = zeros(1,N);
-    C = binornd(1,gamma_pool(1),[1,N]); % CSI
-    for j = 1:epoch
-        % Policy
-        a = Greedy(ages,N);
-        % Evolve
-        ages_ = NextStep(a,ages,pe1_pool,pe0_pool,C,p_pool,N);
-        C = binornd(1,gamma_pool(1),[1,N]); % CSI
-        cumulative_AoII = cumulative_AoII + f_all(ages,N,w);
-        % one step forward
-        ages = ages_;
+%% Function - realization
+% Return the realization of the Channel State Information
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Input:
+%   gamma_pool - Probability distribution of CSI
+%   N - Number of users in the system
+% Output:
+%   ret - The realization of CSI
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function ret = realization(gamma_pool,N)
+    ret = zeros(1,N);
+    for i = 1:N
+        ret(i) = binornd(1,gamma_pool(i));
     end
-    AoII_in_run = AoII_in_run + cumulative_AoII / epoch;
 end
-AoII = AoII_in_run / run;
-
-AoII_ALL(5) = AoII;
-
-fprintf('------------------------------------\n');
-fprintf('N = %d \n', N);
-fprintf('(GP) Average AoII = %.4f \n', AoII/N);
-fprintf('------------------------------------\n');
 
 %% Function - expected_value
+% Calculate the expected AoII and the expected transmission rate for a
+% given threshold policy.
 % Follows Proposition 2 of the paper
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Input:
@@ -429,6 +365,11 @@ function ret = f_all(s,N,w)
     end
 end
 
+% Single user
+function ret = f(s,i,w)
+    ret = s^w(i);
+end
+
 %% Function - f
 % Applying the time penalty function to the penalty to get AoII (one user)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -438,27 +379,6 @@ end
 %   w - Weight in time penalty funtion
 % Output:
 %   ret - AoII for this user only
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function ret = f(s,i,w)
-    ret = s^w(i);
-end
-
-%% Function - RVI
-% Return the optimal policy and the value functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Input:
-%   lambda - Lagrange multiplier
-%   p - Probabilities for the source to change states
-%   gamma - Probability distribution of CSI
-%   pe1 - Probability of error when CSI indicates success (1)
-%   pe0 - Probability of error when CSI indicates failure (0)
-%   smax - Truncate the value of s
-%   epsilon - Convergence criteria in RVI
-%   j - User index
-%   w - Weights in time penalty funtions
-% Output:
-%   ret_policy - The optimal policy
-%   ret_VF - The value functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [ret_policy,ret_VF] = RVI(lambda,p,gamma,pe1,pe0,smax,epsilon,j,w)
     RV_old = zeros(smax+1,2);    % Value function
@@ -536,13 +456,14 @@ function ret = RVI_Trans(i,j,p,gamma,pe1,pe0,smax,RV_old,action)
         if action == 2 % Transmit
             ret = (1-gamma)*(pe0*(1-p)+(1-pe0)*p)*RV_old(1,1) + ...
                   (1-gamma)*(pe0*p+(1-pe0)*(1-p)) * ...
-                  RV_old(min(i+1,smax+1),1) + ...
-                  gamma*(pe0*(1-p)+(1-pe0)*p)*RV_old(1,2) + ...
-                  gamma*(pe0*p+(1-pe0)*(1-p))*RV_old(min(i+1,smax+1),2);
+                   RV_old(min(i+1,smax+1),1) + ...
+                   gamma*(pe0*(1-p)+(1-pe0)*p)*RV_old(1,2) + ...
+                   gamma*(pe0*p+(1-pe0)*(1-p))*RV_old(min(i+1,smax+1),2);
         else
-            ret = (1-gamma)*p*RV_old(1,1) + (1-gamma)*(1-p)* ...
-                  RV_old(min(i+1,smax+1),1) + gamma*p*RV_old(1,2) + ...
-                  gamma*(1-p)*RV_old(min(i+1,smax+1),2);
+            ret = (1-gamma)*p*RV_old(1,1) + (1-gamma) * ...
+                  (1-p)*RV_old(min(i+1,smax+1),1) + ...
+                  gamma*p*RV_old(1,2) + gamma*(1-p) * ...
+                  RV_old(min(i+1,smax+1),2);
         end
     else % positive CSI
         if action == 2
@@ -552,7 +473,7 @@ function ret = RVI_Trans(i,j,p,gamma,pe1,pe0,smax,RV_old,action)
                   gamma*(pe1*p+(1-pe1)*(1-p))*RV_old(1,2) + ...
                   gamma*(pe1*(1-p)+(1-pe1)*p)*RV_old(min(i+1,smax+1),2);
         else
-            ret = (1-gamma)*p*RV_old(1,1) + (1-gamma)*(1-p)* ...
+            ret = (1-gamma)*p*RV_old(1,1) + (1-gamma)*(1-p) * ...
                   RV_old(min(i+1,smax+1),1) + gamma*p*RV_old(1,2) + ...
                   gamma*(1-p)*RV_old(min(i+1,smax+1),2);
         end
@@ -595,16 +516,16 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function ret = Evolve(a,cur_age,pe0,pe1,u,p)
     if cur_age == 0
-        r = binornd(1,p);  % whether the source changes state
+        r = binornd(1,p);
         if r == 1
             ret = 1;
         else
             ret = 0;
         end
     else
-        r = binornd(1,p);     % whether the source changes state
-        e0 = binornd(1,pe0);  % channel realization when CSI=0
-        e1 = binornd(1,pe1);  % channel realization when CSI=1
+        r = binornd(1,p);
+        e0 = binornd(1,pe0);
+        e1 = binornd(1,pe1);
         if a == 0
             if r == 1
                 ret = 0;
@@ -674,21 +595,6 @@ function a = IPP(Ix,cur_age,C,N)
         tmp(i) = Ix(cur_age(i)+1,C(i)+1,i);
     end
     [~,idx] = max(tmp);
-    a(idx) = 1;
-end
-
-%% Function - Greedy
-% Return the action according to Greedy policy
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Input:
-%   cur_age - Current age
-%   N - Number of users in the system
-% Output:
-%   a - The suggested action
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function a = Greedy(cur_age,N)
-    a = zeros(1,N);
-    [~,idx] = max(cur_age);
     a(idx) = 1;
 end
 
