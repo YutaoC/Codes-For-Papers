@@ -3,6 +3,7 @@ Codes for my papers
  - [Minimizing age of incorrect information for unreliable channel with power constraint](#aoii-under-resource-constraints)
  - [Scheduling to Minimize Age of Incorrect Information with Imperfect Channel State Information](#aoii-in-scheduling-problems)
  - [Age of Incorrect Information under Delay](#aoii-under-delay)
+ - [Age of Incorrect Information with Time Out](#aoii-with_time_out)
 
 ----
 ## AoII under resource constraints
@@ -19,6 +20,11 @@ The codes are available [here](AoII_in_scheduling_problems)
 You can view the paper [here](https://arxiv.org/abs/2203.02979)
 
 The codes are available [here](AoII_under_delay)
+
+## AoII with time out
+You can view the paper [here](https://scholar.google.com/)
+
+The codes are available [here](AoII_with_time_out)
 
 ## Utils
 The folder "[utils](utils)" contains the MatLab codes generates all my plots.
